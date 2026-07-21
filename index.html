@@ -765,6 +765,8 @@ const keys = {};
 let nearDock = null, nearSpot = null;
 let mouseX = 0;           // 鼠标水平偏移 -1~1（控制转向）
 let mousePointerLock = false;
+let steerSmooth = 0;      // 当前舵量，缓慢追随目标，避免键盘满舵突变
+let touchSteer = 0, touchThrottle = 0;
 function handleAction(code){
   if(state==='menu'||state==='over') return;
   if(code==='Space'){
@@ -820,20 +822,18 @@ if(joyBg){
     const d = Math.hypot(dx,dy), clamp = Math.min(d,max);
     const nx = dx/max*clamp, ny = dy/max*clamp;
     joyKnob.style.transform = `translate(${nx}px,${ny}px)`;
-    const dead = 10;
-    keys.KeyW = ny < -dead;
-    keys.KeyS = ny > dead;
-    keys.KeyA = nx < -dead;
-    keys.KeyD = nx > dead;
+    const dead = 0.12;
+    touchSteer = Math.abs(nx/max)>dead ? nx/max : 0;
+    touchThrottle = Math.abs(ny/max)>dead ? -ny/max : 0;
   }
   joyBg.addEventListener('touchstart',e=>{ e.preventDefault(); joyTouch=e.changedTouches[0].identifier; joyMove(e.changedTouches[0]); });
   document.addEventListener('touchmove',e=>{ for(const t of e.changedTouches) if(t.identifier===joyTouch){ joyMove(t); break; } });
   document.addEventListener('touchend',e=>{
     for(const t of e.changedTouches) if(t.identifier===joyTouch){
-      joyTouch=null; joyKnob.style.transform=''; keys.KeyW=keys.KeyS=keys.KeyA=keys.KeyD=false; break;
+      joyTouch=null; joyKnob.style.transform=''; touchSteer=touchThrottle=0; break;
     }
   });
-  document.addEventListener('touchcancel',()=>{ joyTouch=null; joyKnob.style.transform=''; keys.KeyW=keys.KeyS=keys.KeyA=keys.KeyD=false; });
+  document.addEventListener('touchcancel',()=>{ joyTouch=null; joyKnob.style.transform=''; touchSteer=touchThrottle=0; });
 }
 // 触摸按钮
 document.querySelectorAll('.tbtn').forEach(btn=>{
@@ -1312,19 +1312,25 @@ function update(dt){
 
   // 船控制
   if(state==='play' || state==='fishing'){
-    let th=0, st=0;
+    let th=0, steerTarget=0;
     if(state==='play'){
       if(keys.KeyW||keys.ArrowUp) th=1;
       if(keys.KeyS||keys.ArrowDown) th=-0.45;
+      if(Math.abs(touchThrottle)>0.01) th=touchThrottle>0 ? touchThrottle : touchThrottle*0.45;
     }
     const spd = Math.hypot(boat.vx,boat.vz);
     // 鼠标转向（pointer lock 下）或键盘 A/D 备选
-    if(mousePointerLock) st = mouseX;
+    if(mousePointerLock) steerTarget = mouseX;
     else {
-      if(keys.KeyA||keys.ArrowLeft) st=-1;
-      if(keys.KeyD||keys.ArrowRight) st=1;
+      if(keys.KeyA||keys.ArrowLeft) steerTarget=-1;
+      if(keys.KeyD||keys.ArrowRight) steerTarget=1;
+      if(Math.abs(touchSteer)>0.01) steerTarget=touchSteer;
     }
-    boat.angle += st * dt * 2.4 * clamp(spd/90+0.35, 0.35, 1);
+    // 约 0.35 秒逐渐加到满舵，松手后柔和回正。
+    const steerResponse = steerTarget===0 ? 7.5 : 5.2;
+    steerSmooth += (steerTarget-steerSmooth)*(1-Math.exp(-steerResponse*dt));
+    if(Math.abs(steerSmooth)<0.002) steerSmooth=0;
+    boat.angle += steerSmooth * dt * 2.05 * clamp(spd/100+0.32, 0.32, 0.92);
     const ms = maxSpeed();
     if(th!==0){
       boat.vx += Math.cos(boat.angle)*th*dt*115;
