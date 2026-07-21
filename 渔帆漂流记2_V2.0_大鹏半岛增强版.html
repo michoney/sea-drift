@@ -765,29 +765,33 @@ const keys = {};
 let nearDock = null, nearSpot = null;
 let mouseX = 0;           // 鼠标水平偏移 -1~1（控制转向）
 let mousePointerLock = false;
+function handleAction(code){
+  if(state==='menu'||state==='over') return;
+  if(code==='Space'){
+    if(state==='fishing') resolveFish();
+    else if(state==='play' && nearSpot) startFishing(nearSpot);
+  }
+  if(code==='KeyE'){
+    if(state==='dock') closeDock();
+    else if(state==='play' && nearDock) openDock(nearDock);
+  }
+  if(code==='KeyQ' && state==='play') eatFish();
+  if(code==='KeyF' && state==='play'){
+    boat.sailUp=!boat.sailUp;
+    msg(boat.sailUp?'⛵ 扬帆！':'⚓ 收帆');
+  }
+}
 addEventListener('keydown', e=>{
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
   if(e.repeat) return;
   keys[e.code]=true;
   if(e.code==='KeyM'){ muted=!muted; msg(muted?'🔇 已静音':'🔊 声音开启'); }
   if(state==='menu'||state==='over') return;
-  if(e.code==='Space'){
-    if(state==='fishing') resolveFish();
-    else if(state==='play' && nearSpot) startFishing(nearSpot);
-  }
-  if(e.code==='KeyE'){
-    if(state==='dock') closeDock();
-    else if(state==='play' && nearDock) openDock(nearDock);
-  }
+  handleAction(e.code);
   if(e.code==='Escape'){
     if(state==='fishing'){ endFishing(); msg('收起了鱼竿。'); }
     else if(state==='dock') closeDock();
     if(mousePointerLock){ document.exitPointerLock(); mousePointerLock=false; }
-  }
-  if(e.code==='KeyQ' && state==='play') eatFish();
-  if(e.code==='KeyF' && state==='play'){
-    boat.sailUp=!boat.sailUp;
-    msg(boat.sailUp?'⛵ 扬帆！':'⚓ 收帆');
   }
 });
 addEventListener('keyup', e=>keys[e.code]=false);
@@ -836,12 +840,11 @@ document.querySelectorAll('.tbtn').forEach(btn=>{
   btn.addEventListener('touchstart',e=>{
     e.preventDefault();
     const code = btn.dataset.key;
-    if(code==='Space'){ e.preventDefault(); document.dispatchEvent(new KeyboardEvent('keydown',{code:'Space'})); }
-    else document.dispatchEvent(new KeyboardEvent('keydown',{code}));
-  });
-  btn.addEventListener('touchend',e=>{
-    const code = btn.dataset.key;
-    if(code!=='Space') document.dispatchEvent(new KeyboardEvent('keyup',{code}));
+    handleAction(code);
+  },{passive:false});
+  // 兼容支持粗指针但不触发 touch 事件的设备。
+  btn.addEventListener('click',e=>{
+    if(e.detail===0){ e.preventDefault(); handleAction(btn.dataset.key); }
   });
 });
 cv.addEventListener('mousedown', e=>{
